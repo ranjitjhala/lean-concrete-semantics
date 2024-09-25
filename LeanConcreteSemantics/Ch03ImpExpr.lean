@@ -318,17 +318,10 @@ theorem dnf_and_is_dnf' : ∀ {a b : Bexp}, is_dnf a -> is_dnf b -> is_dnf (dnf_
   induction a generalizing b <;> simp_all [is_dnf] <;> apply cube_and_is_dnf <;> try trivial
   simp_all [is_cube]
 
--- nico's version
+-- nico's version, golfed
 theorem dnf_and_is_dnf'' : ∀ {a b : Bexp}, is_dnf a -> is_dnf b -> is_dnf (dnf_and a b) := by
   intros a b a_dnf b_dnf
-  induction a generalizing b -- <;> simp_all [is_dnf] <;> apply cube_and_is_dnf <;> try trivial
-  case Band a1 a2 _ _ => simp_all [is_dnf]; apply cube_and_is_dnf; simp_all [is_cube]; assumption
-  case Bor a1 a2 _ _ => simp_all [is_dnf]
-  case Bvar _ => apply simp_all
-
-  -- simp_all [is_cube]
-
-
+  induction a generalizing b <;> simp_all [is_dnf] <;> (apply cube_and_is_dnf; simp_all [is_cube]) <;> assumption
 
 def dnf_of_nnf (b : Bexp) : Bexp :=
   match b with
