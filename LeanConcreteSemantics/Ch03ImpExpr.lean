@@ -312,6 +312,24 @@ theorem dnf_and_is_dnf : ∀ {a b : Bexp}, is_dnf a = true -> is_dnf b = true ->
                     have h : is_cube (Bnot a) = true := by simp_all [is_dnf, is_nnf, is_cube]
                     apply cube_and_is_dnf <;> assumption
 
+-- nico's version
+theorem dnf_and_is_dnf' : ∀ {a b : Bexp}, is_dnf a -> is_dnf b -> is_dnf (dnf_and a b) := by
+  intros a b a_dnf b_dnf
+  induction a generalizing b <;> simp_all [is_dnf] <;> apply cube_and_is_dnf <;> try trivial
+  simp_all [is_cube]
+
+-- nico's version
+theorem dnf_and_is_dnf'' : ∀ {a b : Bexp}, is_dnf a -> is_dnf b -> is_dnf (dnf_and a b) := by
+  intros a b a_dnf b_dnf
+  induction a generalizing b -- <;> simp_all [is_dnf] <;> apply cube_and_is_dnf <;> try trivial
+  case Band a1 a2 _ _ => simp_all [is_dnf]; apply cube_and_is_dnf; simp_all [is_cube]; assumption
+  case Bor a1 a2 _ _ => simp_all [is_dnf]
+  case Bvar _ => apply simp_all
+
+  -- simp_all [is_cube]
+
+
+
 def dnf_of_nnf (b : Bexp) : Bexp :=
   match b with
   | Band b1 b2 => dnf_and (dnf_of_nnf b1) (dnf_of_nnf b2)
