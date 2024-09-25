@@ -187,22 +187,6 @@ namespace section_3_2
 
 open section_3_1
 
--- inductive Bexp where
---   | Bcon : Bool -> Bexp
---   | Bnot : Bexp -> Bexp
---   | Band : Bexp -> Bexp -> Bexp
---   | BLeq : Aexp -> Aexp -> Bexp
---   deriving Repr
-
--- open Bexp
-
--- def bval (b: Bexp) (s: State) : Bool :=
---   match b with
---   | Bcon v => v
---   | Bnot b' => !bval b' s
---   | Band b1 b2 => bval b1 s && bval b2 s
---   | BLeq a1 a2 => aval a1 s <= aval a2 s
-
 inductive Bexp where
   | Bvar : Vname -> Bexp
   | Bnot : Bexp  -> Bexp
@@ -364,3 +348,217 @@ theorem dnf_bval : ∀ {b : Bexp} {s: BState}, bval (dnf_of_nnf b) s = bval b s 
   case Band b1 b2 ih1 ih2 => simp_all [dnf_and_bval, bval, dnf_of_nnf, dnf_and_bval]
 
 end section_3_2
+
+namespace section_3_3
+
+open section_3_1
+
+inductive Instr where
+  | LOADI : Val -> Instr
+  | LOAD  : Vname -> Instr
+  | ADD   : Instr
+  deriving Repr
+
+open Instr
+
+abbrev Stack := List Val
+
+
+-- def exec1 (i:Instr) (s:State) (stk:Stack) : Option Stack :=
+--   match i with
+--   | LOADI n => some (n :: stk)
+--   | LOAD  x => some (s x :: stk)
+--   | ADD     => match stk with
+--                 | n1::n2::stk' => some ((n2 + n1) :: stk')
+--                 | _ => none
+
+def exec1 (s:State) (i:Instr) (stk:Stack) : Stack :=
+  match i, stk with
+  | LOADI n, _         => (n :: stk)
+  | LOAD  x, _         => (s x :: stk)
+  | ADD    , n::m::stk => (m + n) :: stk
+  | ADD    , _         => []
+
+def exec (s:State) (is: List Instr) (stk:Stack) : Stack :=
+  match is with
+  | []     => stk
+  | i::is' => exec s is' (exec1 s i stk)
+
+def comp (a: Aexp) : List Instr :=
+  match a with
+  | .Num n => [LOADI n]
+  | .Var x => [LOAD  x]
+  | .Add a1 a2 => comp a1 ++ comp a2 ++ [ADD]
+
+theorem exec_append : ∀ {s : State} {is1 is2 : List Instr} {stk : Stack},
+  exec s (is1 ++ is2) stk = exec s is2 (exec s is1 stk) := by
+  intros s is1 is2 stk
+  induction is1 generalizing stk
+  case nil => rfl
+  case cons i is1' ih => simp [exec, ih]
+
+theorem comp_exec : ∀ {s : State} {a : Aexp} { stk : Stack },
+  exec s (comp a) stk = aval a s :: stk := by
+  intro s a stk
+  induction a generalizing s stk
+  case Num n => rfl
+  case Var x => rfl
+  case Add a1 a2 ih1 ih2 => simp_all [comp, aval, exec_append, exec, exec1]
+
+-- TODO: 3.10 "option" / skip
+
+abbrev Reg := Nat
+abbrev RState := Reg -> Val
+
+inductive RInst where
+  | RLDI : Val -> Reg -> RInst
+  | RLD  : Vname -> Reg -> RInst
+  | RADD : Reg -> Reg -> RInst
+  deriving Repr
+
+open RInst
+
+def rupd (rs: RState) (r: Reg) (n: Val) : RState :=
+  λ r' => if r = r' then n else rs r'
+
+def rexec1 (s: State) (i: RInst) (rs: RState) : RState :=
+  match i with
+  | RLDI n r  => rupd rs r  n
+  | RLD  x r  => rupd rs r  (s x)
+  | RADD r r' => rupd rs r (rs r + rs r')
+
+def rexec (s: State) (is: List RInst) (rs: RState) : RState :=
+  match is with
+  | []     => rs
+  | i::is' => rexec s is' (rexec1 s i rs)
+
+def rcomp (a: Aexp) (r: Reg) : List RInst :=
+  match a with
+  | .Num n => [RLDI n r]
+  | .Var x => [RLD  x r]
+  | .Add a1 a2 => rcomp a1 r ++ (rcomp a2 (r+1) ++ [RADD r (r+1)])
+
+theorem rexec_append : ∀ {s : State} {is1 is2 : List RInst} {rs: RState},
+  rexec s (is1 ++ is2) rs = rexec s is2 (rexec s is1 rs) := by
+  intros s is1 is2 rs
+  induction is1 generalizing rs
+  case nil => rfl
+  case cons i is1' ih => simp [rexec, ih]
+
+theorem succ_contra : forall {n : Nat}, n+1 = n -> False := by
+  intros n h; induction n <;> simp_all
+
+theorem lt_succ : ∀ {n m : Nat}, n < m -> n < m + 1 := by
+  intros n m h
+  omega
+
+theorem rexec1_sep : ∀ {s: State} { r r' r'': Reg} {rs: RState},
+  r < r' -> rexec1 s (RADD r' r'') rs r = rs r := by
+  intros s r r' r'' rs lt
+  simp_all [rexec1, rupd]
+  intros
+  simp_all
+
+theorem rcomp_sep : ∀ {s: State} {a: Aexp} { r r': Reg}  {rs: RState},
+  r < r' -> rexec s (rcomp a r') rs r = rs r := by
+  intros s a r r' rs lt
+  induction a generalizing r' rs
+  case Num n =>
+    simp_all [rexec, rexec1, rupd]; intros heq; simp_all [heq]
+  case Var x =>
+    simp_all [rexec, rexec1, rupd]; intros heq; simp_all [heq]
+  case Add a1 a2 ih1 ih2 =>
+    simp_all [rcomp, rexec_append, rexec, rexec1_sep]
+    calc
+      rexec s (rcomp a2 (r' + 1)) (rexec s (rcomp a1 r') rs) r
+        = rexec s (rcomp a1 r') rs r := by apply ih2; apply lt_succ; assumption
+      _ = rs r := by simp_all [ih1]
+
+theorem rexec_rcomp : ∀ {a : Aexp} {r: Reg} {s: State} {rs: RState},
+   rexec s (rcomp a r) rs r = aval a s := by
+  intros a r s rs
+  induction a generalizing r s rs
+  case Num n => simp_all [rexec, rcomp, rexec1, aval, rupd]
+  case Var x => simp_all [rexec, rcomp, rexec1, aval, rupd]
+  case Add a1 a2 ih1 ih2 => simp_all [rexec, rcomp, rexec1, aval, rupd, rexec_append, ih1, ih2, rcomp_sep]
+
+-- TODO: 3.12
+inductive instr0 where
+  | LDI0 : Val -> instr0
+  | LD0  : Vname -> instr0
+  | MV0  : Reg -> instr0
+  | ADD0 : Reg -> instr0
+
+open instr0
+
+def r0exec1 (s: State) (i: instr0) (rs: RState) : RState :=
+  match i with
+  | LDI0 n => rupd rs 0 n
+  | LD0  x => rupd rs 0 (s x)
+  | MV0  r => rupd rs r (rs 0)
+  | ADD0 r => rupd rs 0 (rs 0 + rs r)
+
+def r0exec (s: State) (is: List instr0) (rs: RState) : RState :=
+  match is with
+  | []     => rs
+  | i::is' => r0exec s is' (r0exec1 s i rs)
+
+def r0comp (a: Aexp) (r: Reg) : List instr0 :=
+  match a with
+  | .Num n => [LDI0 n]
+  | .Var x => [LD0  x]
+  | .Add a1 a2 => (r0comp a2 r ++ [MV0 r]) ++ (r0comp a1 (r+1) ++ [ADD0 r])
+
+theorem r0exec_append : ∀ {s : State} {is1 is2 : List instr0} {rs: RState},
+  r0exec s (is1 ++ is2) rs = r0exec s is2 (r0exec s is1 rs) := by
+  intros s is1 is2 rs
+  induction is1 generalizing rs
+  case nil => rfl
+  case cons i is1' ih => simp [r0exec, ih]
+
+theorem r0exec1_sep : ∀ {s: State} { r : Reg} {rs: RState},
+  0 < r -> r0exec1 s (ADD0 r) rs r = rs r := by
+  intros s r  rs lt
+  simp_all [r0exec1, rupd]
+  intros
+  simp_all
+
+-- #asknico
+theorem r0comp_sep : ∀ {s: State} {a: Aexp} { r r': Reg}  {rs: RState},
+  0 < r -> r < r' -> r0exec s (r0comp a r') rs r = rs r := by
+  intros s a r r' rs pos lt
+  induction a generalizing r' rs
+  case Num n => simp_all [r0exec, r0exec1, rupd]; intros heq; simp_all [heq]
+  case Var x => simp_all [r0exec, r0exec1, rupd]; intros heq; simp_all [heq]
+  case Add a1 a2 ih1 ih2 =>
+    simp_all [r0comp, r0exec_append]
+    simp_all [r0exec, r0exec1, r0exec_append, rupd, ih1, ih2]
+    split
+    . case isTrue => simp_all []
+    . case isFalse => calc
+        r0exec s (r0comp a1 (r' + 1)) (rupd (r0exec s (r0comp a2 r') rs) r' (r0exec s (r0comp a2 r') rs 0)) r
+          = rupd (r0exec s (r0comp a2 r') rs) r' (r0exec s (r0comp a2 r') rs 0) r := by apply ih1; apply lt_succ; assumption
+        _ = r0exec s (r0comp a2 r') rs r := by simp_all [rupd]; intros; simp_all
+        _ = rs r := by apply ih2; assumption
+
+theorem r0exec_rcomp : ∀ {a : Aexp} {r: Reg} {s: State} {rs: RState},
+   0 < r -> r0exec s (r0comp a r) rs 0 = aval a s := by
+  intros a r s rs pos
+  induction a generalizing r s rs
+  case Num n => simp_all [r0exec, r0comp, r0exec1, aval, rupd]
+  case Var x => simp_all [r0exec, r0comp, r0exec1, aval, rupd]
+  case Add a1 a2 ih1 ih2 =>
+    simp_all [r0comp, aval, r0exec_append, r0exec, r0exec1]
+    let v2   := aval a2 s
+    let rs2  := r0exec s (r0comp a2 r) rs
+    let rs2' := rupd rs2 r v2
+    let is1  := r0comp a1 (r + 1)
+    calc
+      rupd (r0exec s is1 rs2') 0 (aval a1 s + r0exec s is1 rs2' r) 0
+        = aval a1 s + r0exec s (r0comp a1 (r + 1)) rs2' r := by simp [rupd, is1]
+      _ = aval a1 s + rs2' r                              := by simp [r0comp_sep pos]
+      _ = aval a1 s + rupd rs2 r v2 r                     := by simp [r0comp_sep pos]
+      _ = aval a1 s + v2                                  := by simp [rupd]
+      _ = aval a1 s + aval a2 s                           := by simp [v2]
+
+end section_3_3
