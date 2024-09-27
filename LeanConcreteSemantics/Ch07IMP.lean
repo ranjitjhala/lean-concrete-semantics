@@ -100,7 +100,7 @@ inductive BigStep : Com -> State -> State -> Prop where
   | WhileFalse {b c st} : bval b st = false -> BigStep (While b c) st st
   | WhileTrue {b c st st' st''} : bval b st = true -> BigStep c st st' -> BigStep (While b c) st' st'' -> BigStep (While b c) st st''
 
-notation:12 "⟨" c "," st "⟩ ==> " st'  => BigStep c st st'
+notation:12 "⟨" c "," s "⟩ ==> " t  => BigStep c s t
 
 example : ⟨ (x <~ 5 ;; y <~ x + 1) , st0 ⟩ ==> st0 [x := 5] [y := 6] := by
   apply BigStep.Seq
@@ -133,3 +133,99 @@ theorem seq_assoc : ∀ {c1 c2 c3 : Com} { st st' : State },
           apply BigStep.Seq
           assumption
           assumption
+
+def equiv_com (c1 c2 : Com) := ∀ {st st' : State}, ( ⟨ c1, st ⟩ ==> st') ↔ ( ⟨ c2, st ⟩ ==> st' )
+
+infix:50 "≃"  => equiv_com
+
+theorem skip_skip : ∀ {c: Com}, (Skip ;; c) ≃ c := by
+  intros c st st'
+  apply Iff.intro
+  case mp =>
+    intro skip_c
+    cases skip_c
+    case Seq h1 h2 =>
+      cases h1
+      assumption
+  case mpr =>
+    intro c
+    apply BigStep.Seq
+    apply BigStep.Skip
+    assumption
+
+theorem unfold_while : ∀ {b c}, (WHILE b DO c END) ≃ ((IF b THEN c ELSE Skip) ;; (WHILE b DO c END)) := by
+  intros b c st st'
+  apply Iff.intro
+  case mp =>
+   intros hw
+   cases hw
+   . case WhileFalse bf =>
+     apply BigStep.Seq
+     apply BigStep.IfFalse
+     assumption
+     apply BigStep.Skip
+     apply BigStep.WhileFalse
+     assumption
+   . case WhileTrue hb hc hw =>
+      apply BigStep.Seq
+      apply BigStep.IfTrue ; assumption
+      assumption
+      assumption
+  case mpr =>
+    intros hiw
+    cases hiw
+    . case Seq hi hw =>
+      cases hi
+      . case IfTrue hb hc =>
+        apply BigStep.WhileTrue
+        assumption
+        assumption
+        assumption
+      . case IfFalse hb hc =>
+        cases hc
+        assumption
+
+theorem seq_assoc_kyle : ∀ {c1 c2 c3 : Com}, (c1 ;; (c2 ;; c3)) ≃ ((c1 ;; c2) ;; c3) := by
+   intros c1 c2 c3 st st'
+   constructor <;> intro H
+   . rcases H
+     case mp.Seq h1 h23 =>
+       cases h23
+       apply BigStep.Seq
+       . case Seq h1 h2 => apply BigStep.Seq <;> assumption
+       . case Seq h12 h3 => assumption
+   . rcases H
+     case mpr.Seq h12 h3 =>
+       cases h12
+       apply BigStep.Seq
+       . case Seq => assumption
+       . case Seq => apply BigStep.Seq <;> assumption
+
+theorem if_c_c : ∀ { b c }, (IF b THEN c ELSE c) ≃ c := by
+   intros b c st st'
+   apply Iff.intro
+   case mp =>
+     intro hif
+     cases hif <;> assumption
+   case mpr =>
+     intro hc
+     cases hb : bval b st
+     .case false => apply BigStep.IfFalse <;> assumption
+     .case true  => apply BigStep.IfTrue  <;> assumption
+
+theorem boo : ∀ {b c c' s t},
+  (⟨ WHILE b DO c END , s ⟩ ==> t) ->
+  c ≃ c' ->
+  (⟨ WHILE b DO c' END, s ⟩ ==> t) := by
+  intros b c c' s t cst cc
+  induction cst -- nasty error: index in target's type is not a variable (consider using the `cases` tactic instead)
+
+  -- cases hb : bval b s
+  -- . case false =>
+  --   cases cst
+  --   . case WhileFalse => apply BigStep.WhileFalse <;> assumption
+  --   . case WhileTrue  => simp_all []
+  -- . case true =>
+  --   cases cst
+  --   . case WhileFalse => simp_all []
+  --   . case WhileTrue s1 _ c_s_s1 w_c_s1_t => sorry
