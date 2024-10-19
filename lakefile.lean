@@ -10,3 +10,5 @@ lean_lib «LeanConcreteSemantics» where
 @[default_target]
 lean_exe "lean-concrete-semantics" where
   root := `Main
+
+require aesop from git "https://github.com/leanprover-community/aesop" @ "v4.11.0"

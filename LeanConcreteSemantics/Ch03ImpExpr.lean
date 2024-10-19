@@ -37,6 +37,8 @@ example : aval aexp_x st0 = 0 := rfl
 def upd (s: State) (x: Vname) (v: Val) : State :=
   λ y => if y = x then v else s y
 
+
+
 notation:10 s " [ " x " := " v " ] " => upd s x v
 
 def st1 := st0 ["x" := 2] [ "y" := 10 ] [ "z" := 100 ]
@@ -55,10 +57,6 @@ def asimp_const (a: Aexp) : Aexp :=
 theorem aval_asimp_const : ∀ {a: Aexp} {s: State}, aval a s = aval (asimp_const a) s  := by
   intros a s
   induction a using asimp_const.induct <;> simp [asimp_const, aval, *]
-  -- case case1 => rfl
-  -- case case2 => rfl
-  -- case case3 a1 a2 n1 n2 _ _ _ _ => simp [asimp_const, aval, *]
-  -- case case4 => simp [asimp_const, aval, *]
 
 theorem aval_asimp_const' : ∀ {a: Aexp} {s: State}, aval (asimp_const a) s  = aval a s := by
   intros a s

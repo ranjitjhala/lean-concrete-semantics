@@ -539,6 +539,11 @@ inductive iter {α : Type} (r : α -> α -> Prop) : Nat -> α -> α -> Prop wher
   | iter_base : ∀ {a : α}, iter r 0 a a
   | iter_step : ∀ {n : Nat} {a b c : α}, r a b -> iter r n b c -> iter r (succ n) a c
 
+theorem star_one : ∀ { α : Type} { r: α -> α -> Prop} {a b : α}, r a b -> star r a b := by
+  intros α r a b r_ab
+  apply step r_ab
+  apply refl
+
 theorem star_iter : ∀ {α : Type} {r : α -> α -> Prop} {a b : α}, star r a b -> ∃ (n : Nat), iter r n a b := by
   intros α r a b star_ab
   induction star_ab
