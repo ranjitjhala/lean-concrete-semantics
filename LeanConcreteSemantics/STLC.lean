@@ -2,8 +2,6 @@
 /- http://siek.blogspot.com/2013/05/type-safety-in-three-easy-lemmas.html -/
 set_option pp.fieldNotation false
 
-example : 1 + 1 = 2 := rfl
-
 inductive Ty where
   | TInt  : Ty
   | TBool : Ty
@@ -39,14 +37,6 @@ inductive Result (α : Type) : Type where
 
 open Result
 
--- def lookup {v} (key: Vname) (kvs : List (Vname × v)) : Result v :=
---   match kvs with
---   | [] => Stuck
---   | (k', v) :: kvs => if key == k' then Ok v else lookup key kvs
-
--- example : lookup "dog" [("cat", 1), ("dog", 2), ("rat", 3)] = Ok 2 := rfl
--- example : lookup "dog" [("cat", 1), ("hog", 2), ("rat", 3)] = Stuck := rfl
-
 inductive Val where
   | VInt  : Int -> Val
   | VBool : Bool -> Val
@@ -64,7 +54,6 @@ def upd (s: Vname -> α ) (x: Vname) (v: α ) : Vname -> α :=
 notation:10 s " [ " x " := " v " ] " => upd s x v
 
 -- --------------------------------------------------------------------------------------------
-
 
 def combine (r1 : Result Val) (r2 : Result Val) (k : Val -> Val -> Result Val) : Result Val :=
   match r1 with
@@ -106,30 +95,14 @@ def eval (k : Nat) (ρ : State) (e : Exp) : Result Val :=
                           | _ => Stuck
                         )
 
--- def eval (k : Nat) (ρ : State) (e : Exp) : Result Val :=
---   match (k, e) with
---   | (0,   _          ) => Timeout
---   | (_,   ENum n     ) => Ok (VInt n)
---   | (_,   EBool b    ) => Ok (VBool b)
---   | (_,   EVar x     ) => Ok (ρ x)
---   | (_,   ELam x τ e ) => Ok (VClos x τ e ρ)
---   | (k+1, EOp o e1 e2) => combine (eval k ρ e1) (eval k ρ e2) (eval_op o)
---   | (k+1, EApp  e1 e2) => combine  (eval k ρ e1) (eval k ρ e2) (fun v1 v2 =>
---                             match v1 with
---                             | VClos x _ e ρ' => eval k (ρ' [ x := v2 ]) e
---                             | _ => Stuck
---                           )
+-- --------------------------------------------------------------------------------------------
 
 def one_plus_two := EOp Add (ENum 1) (ENum 2)
-
 def inc := ELam "x" TInt (EOp Add (EVar "x") (ENum 1))
-
 def st0 : State := λ _ => VInt 0
-
 example : eval 100 st0 (EApp inc one_plus_two) = Ok (VInt 4) := rfl
 
 -- --------------------------------------------------------------------------------------------
-
 
 def ty_op (o: Op) (τ1 τ2: Ty) : Option Ty :=
   match (o, τ1, τ2) with
@@ -171,9 +144,9 @@ theorem bool_val : WV v TBool <-> ∃ b, v = VBool b := by
   . case mpr => intro h ; cases h ; simp_all []; constructor
 
 -- lemma 1
-theorem op_safe : some τ = ty_op o τ1 τ2  -> WV v1 τ1 -> WV v2 τ2 -> ∃ v, eval_op o v1 v2 = Ok v ∧ WV v τ
+theorem op_safe :  WV v1 τ1 -> WV v2 τ2 -> some τ = ty_op o τ1 τ2 -> ∃ v, eval_op o v1 v2 = Ok v ∧ WV v τ
   := by
-  intros tyop v1t1 v2t2
+  intros v1t1 v2t2 tyop
   cases o
   . case Add   =>
     cases τ1 <;> cases τ2 <;> repeat trivial
@@ -192,28 +165,92 @@ theorem op_safe : some τ = ty_op o τ1 τ2  -> WV v1 τ1 -> WV v2 τ2 -> ∃ v,
          apply Exists.intro (VBool (i1 == i2))
          simp_all [eval_op, op_equal])
 
+theorem op_safe_r : WR r1 τ1 -> WR r2 τ2 -> some τ = ty_op o τ1 τ2 -> WR (combine r1 r2 (eval_op o)) τ
+  := by
+  intros wr1 wr2 t_op
+  cases wr1 <;> cases wr2 <;> simp_all [combine]
+  . case TOk.TOk =>
+    rename_i v1 vt1 v2 vt2
+    cases (op_safe vt1 vt2 t_op)
+    rename_i w hw
+    cases hw
+    simp_all []
+    constructor
+    assumption
+  repeat constructor
 
 -- lemma 2
 theorem lookup_safe : WS Γ ρ -> WV (ρ x) (Γ x)  := by
   intro h_ws
   apply h_ws x
 
+theorem ws_upd : WS Γ ρ -> WV v τ -> WS (Γ [ x := τ ]) (ρ [ x := v ]) := by
+  intros ws wv
+  intro y
+  by_cases (y = x) <;> simp_all [upd]
+
+theorem wr_val : ¬ (r = Timeout) -> WR r τ ->  ∃ v, r = Ok v /\ WV v τ := by
+  intro not_timeout wr
+  cases wr
+  . case TOk => apply Exists.intro; trivial
+  . case TTimeout => trivial
 
 theorem eval_safe:
   WT Γ e τ -> WS Γ ρ -> WR (eval k ρ e) τ := by
   intros wt ws
-  induction k, ρ, e using eval.induct <;> simp_all [eval]
+  induction k, ρ, e using eval.induct generalizing τ Γ  <;> simp_all [eval]
   -- case k = 0
-  constructor
+  . case case1 =>
+    constructor
   -- case num n
-  cases wt; repeat constructor
+  . case case2 =>
+    cases wt; repeat constructor
   -- case bool b
-  cases wt; repeat constructor
+  . case case3 =>
+    cases wt; repeat constructor
   -- case var x
-  rename_i ρ _ x ; cases wt ; apply ws x
+  . case case4 =>
+    constructor; rename_i ρ _ x ; cases wt ; apply ws x
   -- case op o e1 e2
-  sorry
+  . case case5 =>
+    cases wt; rename_i ρ k o e1 e2 ih1 ih2 t1 t2 et1 et2 op_ty
+    apply op_safe_r
+    apply ih1; repeat trivial
+    apply ih2; repeat trivial
+    simp_all []
   -- case lam
-  cases wt; rename_i ρ _ x τx e τ' te; repeat constructor; apply ws; assumption
+  . case case6 =>
+    cases wt; rename_i ρ _ x τx e τ' te; repeat constructor
+    apply ws
+    trivial
   -- case app
-  sorry
+  . case case7 =>
+    cases wt
+    rename_i ρ k e1 e2 ih1 ih2 ih3 τ2 et2 et1
+    generalize h1 : (eval k ρ e1) = r1 at ih1   --- this is ANF / Nico's tip
+    generalize h2 : (eval k ρ e2) = r2 at ih2   --- this is ANF / Nico's tip
+    have hv1 : ¬ (r1 = Timeout) -> ∃ v1, r1 = Ok v1 ∧ WV v1 (TFun τ2 τ)
+      := by intros r1_not_timeout; apply wr_val; trivial; apply ih1; repeat trivial
+    have hv2 : ¬ (r2 = Timeout) -> ∃ v2, r2 = Ok v2 ∧ WV v2 τ2
+      := by intros r1_not_timeout; apply wr_val; trivial; apply ih2; repeat trivial
+    cases r1
+    . case TApp.Ok =>
+      cases r2
+      . case Ok =>
+        simp_all [combine]
+        rename_i v1 v2
+        cases hv1
+        rename_i ρ' Γ' x body ws' tbody
+        simp_all []
+        apply ih3
+        apply tbody
+        apply ws_upd
+        repeat trivial
+      . case Stuck =>
+        simp_all []
+      . case Timeout =>
+        simp_all [combine]; constructor
+    . case TApp.Stuck =>
+      simp_all []
+    . case TApp.Timeout =>
+      simp_all [combine]; constructor
